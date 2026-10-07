@@ -1,0 +1,91 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Find Xcode project
+        run: |
+          find . -maxdepth 3 \( -name "*.xcworkspace" -o -name "*.xcodeproj" \) -print
+
+      - name: Build
+        run: |
+          set -e
+
+          WORKSPACE=$(find . -maxdepth 3 -name "*.xcworkspace" | head -n 1)
+          PROJECT=$(find . -maxdepth 3 -name "*.xcodeproj" | head -n 1)
+
+          if [ -n "$WORKSPACE" ]; then
+            echo "Using workspace: $WORKSPACE"
+
+            SCHEME=$(xcodebuild -list -workspace "$WORKSPACE" \
+              | sed -n '/Schemes:/,/^$/p' \
+              | tail -n +2 \
+              | sed '/^[[:space:]]*$/d' \
+              | head -n 1 \
+              | xargs)
+
+            xcodebuild \
+              -workspace "$WORKSPACE" \
+              -scheme "$SCHEME" \
+              -configuration Release \
+              -sdk iphoneos \
+              -derivedDataPath build \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              build
+
+          elif [ -n "$PROJECT" ]; then
+            echo "Using project: $PROJECT"
+
+            SCHEME=$(xcodebuild -list -project "$PROJECT" \
+              | sed -n '/Schemes:/,/^$/p' \
+              | tail -n +2 \
+              | sed '/^[[:space:]]*$/d' \
+              | head -n 1 \
+              | xargs)
+
+            xcodebuild \
+              -project "$PROJECT" \
+              -scheme "$SCHEME" \
+              -configuration Release \
+              -sdk iphoneos \
+              -derivedDataPath build \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              build
+
+          else
+            echo "Không tìm thấy .xcodeproj hoặc .xcworkspace"
+            exit 1
+          fi
+
+      - name: Package IPA
+        run: |
+          set -e
+
+          APP=$(find build -name "*.app" -type d | head -n 1)
+
+          if [ -z "$APP" ]; then
+            echo "Không tìm thấy file .app"
+            exit 1
+          fi
+
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+
+          mkdir -p ipa
+          zip -r ipa/NguyenLoc-IOS.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: NguyenLoc-IOS-IPA
+          path: ipa/NguyenLoc-IOS.ipa
